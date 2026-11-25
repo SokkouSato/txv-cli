@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<style>
+  :root { color-scheme: light dark; }
+  body { width: 340px; margin: 0; padding: 14px 16px; font: 13px/1.5 -apple-system, "Segoe UI", sans-serif; }
+  h1 { font-size: 14px; margin: 0 0 8px; }
+  button { width: 100%; padding: 9px 10px; margin: 4px 0; border-radius: 8px; border: 1px solid #8884;
+           background: #1d9bf0; color: #fff; font-size: 13px; cursor: pointer; }
+  button.secondary { background: transparent; color: inherit; }
+  button:disabled { opacity: .55; cursor: default; }
+  #status { margin-top: 8px; font-size: 12px; white-space: pre-wrap; word-break: break-all; }
+  .ok { color: #0a7d32; } .err { color: #c0392b; }
+  #tokenRow { display: flex; gap: 6px; margin-top: 10px; }
+  #tokenRow input { flex: 1; min-width: 0; padding: 6px 8px; border-radius: 6px; border: 1px solid #8886;
+                    font: 12px/1.4 ui-monospace, Consolas, monospace; }
+  #tokenRow button { width: auto; margin: 0; padding: 6px 10px; font-size: 12px; }
+  #tokenHint { margin-top: 4px; font-size: 11px; opacity: .7; }
+</style>
+</head>
+<body>
+  <h1>X Cookie Bridge</h1>
+  <div id="hint" style="font-size:12px;opacity:.75">从当前 Chrome 配置读取 x.com 的会话 cookie，发给本机 127.0.0.1:8791。</div>
+  <div id="tokenRow">
+    <input id="token" type="password" placeholder="桥接令牌" autocomplete="off" spellcheck="false" />
+    <button id="saveToken" class="secondary">保存令牌</button>
+  </div>
+  <div id="tokenHint">令牌在 <code>work/bridge_token.txt</code>（勿截图/外发）。</div>
+  <button id="send">读取并发送到本机</button>
+  <button id="save" class="secondary">另存为 JSON 文件</button>
+  <div id="status"></div>
+  <script src="popup.js"></script>
+</body>
+</html>

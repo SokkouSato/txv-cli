@@ -1,0 +1,200 @@
+diff --git a/tweetxvault/auth/firefox.py b/tweetxvault/auth/firefox.py
+index 4a0a7fe..bb8bd22 100644
+--- a/tweetxvault/auth/firefox.py
++++ b/tweetxvault/auth/firefox.py
+@@ -6,6 +6,7 @@ import configparser
+ import os
+ import shutil
+ import sqlite3
++import sys
+ import tempfile
+ from collections.abc import Callable, Iterator, Mapping
+ from contextlib import contextmanager
+@@ -17,7 +18,18 @@ from pydantic import BaseModel, ConfigDict
+ 
+ from tweetxvault.exceptions import AuthResolutionError
+ 
+-FIREFOX_PROFILES_INI = Path.home() / ".mozilla/firefox/profiles.ini"
++def _default_profiles_ini() -> Path:
++    """Firefox 的 profiles.ini 位置随平台不同（原来只写了 Linux 路径）。"""
++    if os.name == "nt":
++        appdata = os.environ.get("APPDATA")
++        if appdata:
++            return Path(appdata) / "Mozilla" / "Firefox" / "profiles.ini"
++    elif sys.platform == "darwin":
++        return Path.home() / "Library" / "Application Support" / "Firefox" / "profiles.ini"
++    return Path.home() / ".mozilla" / "firefox" / "profiles.ini"
++
++
++FIREFOX_PROFILES_INI = _default_profiles_ini()
+ COOKIE_NAMES = {"auth_token", "ct0", "twid"}
+ COOKIE_HOSTS = {"x.com", ".x.com", "twitter.com", ".twitter.com"}
+ SQLITE_SNAPSHOT_SUFFIXES = ("", "-wal", "-shm", "-journal")
+diff --git a/tweetxvault/cli.py b/tweetxvault/cli.py
+index c4b7066..9db7164 100644
+--- a/tweetxvault/cli.py
++++ b/tweetxvault/cli.py
+@@ -5,9 +5,13 @@ from __future__ import annotations
+ import asyncio
+ import os
+ import re
+-import resource
+ import subprocess
+ import sys
++
++try:  # Windows 没有 resource 模块
++    import resource
++except ImportError:
++    resource = None  # type: ignore[assignment]
+ from collections.abc import Awaitable, Callable
+ from dataclasses import dataclass
+ from datetime import datetime
+@@ -651,13 +655,24 @@ def _format_created_at(raw: str | None) -> str:
+     try:
+         dt = datetime.strptime(raw, "%a %b %d %H:%M:%S %z %Y")
+         local_dt = dt.astimezone()
+-        date_part = local_dt.strftime("%b %-d, %Y")
+-        time_part = local_dt.strftime("%-I:%M %p").lower()
++        date_part = _format_date_part(local_dt)
++        time_part = _format_time_part(local_dt)
+         return f"{date_part}\n{time_part}"
+     except (ValueError, TypeError):
+         return raw
+ 
+ 
++def _format_date_part(dt: datetime) -> str:
++    """`%b %-d, %Y` 的跨平台写法（`%-d` 是 glibc 专有，Windows 不认）。"""
++    return f"{dt.strftime('%b')} {dt.day}, {dt.year}"
++
++
++def _format_time_part(dt: datetime) -> str:
++    """`%-I:%M %p` 小写形式的跨平台写法。"""
++    hour12 = dt.hour % 12 or 12
++    return f"{hour12}:{dt.strftime('%M %p')}".lower()
++
++
+ def _format_stats_timestamp(raw: str | None) -> str:
+     if not raw:
+         return "-"
+@@ -668,8 +683,8 @@ def _format_stats_timestamp(raw: str | None) -> str:
+         except (ValueError, TypeError):
+             return raw
+     local_dt = parsed.astimezone() if parsed.tzinfo is not None else parsed
+-    date_part = local_dt.strftime("%b %-d, %Y")
+-    time_part = local_dt.strftime("%-I:%M %p").lower()
++    date_part = _format_date_part(local_dt)
++    time_part = _format_time_part(local_dt)
+     return f"{date_part} {time_part}"
+ 
+ 
+@@ -1819,7 +1834,11 @@ def _raise_nofile_limit() -> None:
+     LanceDB creates one table version per merge_insert. Large archives can
+     accumulate thousands of versions, each backed by data files that Lance
+     opens during queries. The default soft limit (often 1024) is too low.
++
++    Windows 没有这个限制（也没有 resource 模块），直接跳过。
+     """
++    if resource is None:
++        return
+     soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+     if soft < hard:
+         resource.setrlimit(resource.RLIMIT_NOFILE, (hard, hard))
+diff --git a/tweetxvault/config.py b/tweetxvault/config.py
+index 985cdd3..e6c053a 100644
+--- a/tweetxvault/config.py
++++ b/tweetxvault/config.py
+@@ -106,17 +106,18 @@ def resolve_paths(env: Mapping[str, str] | None = None) -> XDGPaths:
+     if raw := env.get("XDG_CONFIG_HOME"):
+         config_dir = Path(raw).expanduser() / APP_NAME
+     else:
+-        config_dir = Path(platformdirs.user_config_dir(APP_NAME))
++        # appauthor=False：否则 Windows 上 platformdirs 会拼成 tweetxvault\tweetxvault
++        config_dir = Path(platformdirs.user_config_dir(APP_NAME, appauthor=False))
+ 
+     if raw := env.get("XDG_DATA_HOME"):
+         data_dir = Path(raw).expanduser() / APP_NAME
+     else:
+-        data_dir = Path(platformdirs.user_data_dir(APP_NAME))
++        data_dir = Path(platformdirs.user_data_dir(APP_NAME, appauthor=False))
+ 
+     if raw := env.get("XDG_CACHE_HOME"):
+         cache_dir = Path(raw).expanduser() / APP_NAME
+     else:
+-        cache_dir = Path(platformdirs.user_cache_dir(APP_NAME))
++        cache_dir = Path(platformdirs.user_cache_dir(APP_NAME, appauthor=False))
+ 
+     return XDGPaths(
+         config_dir=config_dir,
+diff --git a/tweetxvault/sync.py b/tweetxvault/sync.py
+index 9316fd9..e45f24f 100644
+--- a/tweetxvault/sync.py
++++ b/tweetxvault/sync.py
+@@ -3,7 +3,6 @@
+ from __future__ import annotations
+ 
+ import asyncio
+-import fcntl
+ from collections.abc import Awaitable, Callable, Sequence
+ from dataclasses import dataclass
+ from pathlib import Path
+@@ -12,6 +11,12 @@ from typing import Any
+ import httpx
+ from rich.console import Console
+ 
++try:  # POSIX
++    import fcntl
++except ImportError:  # Windows：没有 fcntl，改用 msvcrt
++    fcntl = None  # type: ignore[assignment]
++    import msvcrt
++
+ from tweetxvault.auth import ResolvedAuthBundle, resolve_auth_bundle
+ from tweetxvault.client.base import build_async_client
+ from tweetxvault.client.timelines import (
+@@ -114,6 +119,29 @@ class SyncFollowupPlan:
+         return any((self.enrich, self.articles, self.media, self.unfurl, self.threads))
+ 
+ 
++def _lock_file(handle: Any) -> None:
++    """跨平台排他锁：POSIX 用 fcntl，Windows 用 msvcrt。拿不到锁时抛 BlockingIOError。"""
++    if fcntl is not None:
++        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
++        return
++    handle.seek(0)
++    try:
++        msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
++    except OSError as exc:  # Windows 的 LK_NBLCK 失败抛的是 OSError
++        raise BlockingIOError(str(exc)) from exc
++
++
++def _unlock_file(handle: Any) -> None:
++    if fcntl is not None:
++        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
++        return
++    handle.seek(0)
++    try:
++        msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
++    except OSError:
++        pass
++
++
+ class ProcessLock:
+     def __init__(self, path: Path):
+         self.path = path
+@@ -123,7 +151,7 @@ class ProcessLock:
+         self.path.parent.mkdir(parents=True, exist_ok=True)
+         handle = self.path.open("a+")
+         try:
+-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
++            _lock_file(handle)
+         except BlockingIOError as exc:
+             handle.close()
+             raise ProcessLockError("Another tweetxvault archive job is already running.") from exc
+@@ -132,7 +160,7 @@ class ProcessLock:
+     def release(self) -> None:
+         if self._handle is None:
+             return
+-        fcntl.flock(self._handle.fileno(), fcntl.LOCK_UN)
++        _unlock_file(self._handle)
+         self._handle.close()
+         self._handle = None
+ 

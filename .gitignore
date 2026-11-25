@@ -1,0 +1,31 @@
+# runtime data — never commit
+work/
+accounts/
+store/
+viewer/data/
+viewer/vault/
+viewer/state.db
+
+# credentials / keys
+*.pem
+cookies*.json
+bridge_token.txt
+extension_id.txt
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+
+# databases / logs
+*.db
+*.db-wal
+*.db-shm
+*.log
+
+# editors / os
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

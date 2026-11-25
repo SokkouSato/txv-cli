@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "X Cookie Bridge (local)",
+  "version": "1.2.0",
+  "description": "Reads X session cookies from this Chrome profile and hands them to a local ingest server.",
+  "permissions": [
+    "cookies",
+    "downloads",
+    "storage"
+  ],
+  "host_permissions": [
+    "*://*.x.com/*",
+    "*://*.twitter.com/*",
+    "http://127.0.0.1:8791/*"
+  ],
+  "background": {
+    "service_worker": "sw.js"
+  },
+  "action": {
+    "default_title": "导出 X cookie",
+    "default_popup": "popup.html"
+  }
+}
