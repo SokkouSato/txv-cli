@@ -1,5 +1,7 @@
 # txv — 本地 X（Twitter）归档工具集
 
+简体中文 | [English](README.en.md)
+
 把 X 的书签、点赞、自己发的推文归档到本地，媒体按内容寻址存储，配一个纯离线的 X 风格浏览界面。
 
 - **采集**：复用 [tweetxvault](https://github.com/lhl/tweetxvault) 抓时间线（`sync` 只写元数据，不下载媒体）
